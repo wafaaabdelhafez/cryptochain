@@ -73,6 +73,21 @@ describe('Wallet', () => {
             });
         });
 
+        expect('and a chain is passed', () => {
+            it('calls `Wallet.calculateBalance()`', () => {
+                const calculateBalanceMock = jest.fn();
+                const originalCalculateBalance = Wallet.calculateBalance;
+                Wallet.calculateBalance = calculateBalanceMock;
+                wallet.createTransaction({
+                    recipient: 'foo',
+                    amount: 10,
+                    chain: new BlockChain().chain
+                });
+                expect(calculateBalanceMock).toHaveBeenCalled();
+                Wallet.calculateBalance = originalCalculateBalance;
+            });
+        });
+
     });
 
     describe('calculateBalance()', () => {
@@ -107,13 +122,60 @@ describe('Wallet', () => {
                 blockchain.addBlock({data: [tOne, tTwo]});
             });
 
-            it('adds the sum of all outputsto the wallet balance', () => {
+            it('adds the sum of all outputs to the wallet balance', () => {
                 expect(Wallet.calculateBalance({
                     chain: blockchain.chain,
                     address: wallet.publicKey
                 })).toEqual(STARTING_BALANCE + 
                     tOne.outputMap[wallet.publicKey] + tTwo.outputMap[wallet.publicKey]);
             });
+
+            describe('and the wallet has made a transaction', () => {
+                let recentTrans;
+                beforeEach(() => {
+                    recentTrans = wallet.createTransaction({
+                        recipient: 'foo',
+                        amount: 30
+                    });
+                    blockchain.addBlock({data: [recentTrans]});
+                });
+
+                it('returns the output amount of the recent trans.', () => {
+                    expect(Wallet.calculateBalance({
+                        chain: blockchain.chain,
+                        address: wallet.publicKey
+                    })).toEqual(recentTrans.outputMap[wallet.publicKey]);
+                });
+
+                describe('and there are outputs next to and after the recent trans.', () => {
+                    let sameBlockTrans, nextBlockTrans;
+                    beforeEach(() => {
+                        recentTrans = wallet.createTransaction({
+                            recipient: 'later-foo',
+                            amount: 60
+                        });
+                        sameBlockTrans = Transaction.rewardTransaction({minerWallet: wallet});
+                        blockchain.addBlock({data: [recentTrans, sameBlockTrans]});
+                        nextBlockTrans = new Wallet().createTransaction({
+                            recipient: wallet.publicKey,
+                            amount: 70
+                        });
+                        blockchain.addBlock({data: [nextBlockTrans]});
+                    });
+
+                    it('includes the output amount of the returned balance ', () => {
+                        expect(Wallet.calculateBalance({
+                            chain: blockchain.chain,
+                            address: wallet.publicKey
+                        })).toEqual(
+                            recentTrans.outputMap[wallet.publicKey] + 
+                            sameBlockTrans.outputMap[wallet.publicKey] +
+                            nextBlockTrans.outputMap[wallet.publicKey]
+                        );
+                    });
+                });
+            });
+
         });
     });
 
